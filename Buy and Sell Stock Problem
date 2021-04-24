@@ -176,7 +176,7 @@ public:
 ---------------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------
 
-4. https://leetcode.com/problems/best-time-to-buy-and-sell-stock-with-cooldown/
+5. https://leetcode.com/problems/best-time-to-buy-and-sell-stock-with-cooldown/
 
      **Buy and Sell Stock with Cooldown**
 
@@ -208,6 +208,43 @@ public:
         
         vector<vector<int>> v(n,vector<int>(2,-1));
         return find(1,prices,0,v);
+    }
+};
+```
+
+---------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------
+
+6. https://leetcode.com/problems/best-time-to-buy-and-sell-stock-with-transaction-fee/
+
+     **Buy and Sell Stock with transaction-fee**
+```
+class Solution {
+public:
+    int find(int buy,vector<int>& prices, int fee, int i,vector<vector<int>> &v)
+    {
+        if(i>=prices.size()) return 0;
+        
+        if(v[i][buy]!=-1) return v[i][buy];
+        if(buy)
+        {
+           int a= -prices[i]+find(!buy,prices,fee,i+1,v); 
+           int b=  find(buy,prices,fee,i+1,v);
+            
+           return v[i][buy]=max(a,b); 
+        }
+        else
+        {
+           int a=  prices[i]+find(!buy,prices,fee,i+1,v)-fee; 
+           int b=  find(buy,prices,fee,i+1,v); 
+           return v[i][buy]=max(a,b); 
+        }
+    }
+    int maxProfit(vector<int>& prices, int fee) {
+        int n=prices.size();
+        
+        vector<vector<int>> v(n,vector<int>(2,-1));
+        return find(1,prices,fee,0,v);
     }
 };
 ```
