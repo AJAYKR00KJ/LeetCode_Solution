@@ -23,7 +23,7 @@ Initially, the 2d grid is filled with water.
 
 
 **Solution**:
-Time complexity: O(k log(mn)), where k == positions.length
+
 ```
 class Solution {
 public:
