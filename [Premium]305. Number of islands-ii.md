@@ -66,7 +66,7 @@ public:
 };
 ```
 
-Solution:2 [union by rank]
+**Solution:2** **[**union by rank**]**
 Time Complexity: O(k log(mn)), where k == positions.length
 Space Complexity: O(m*n)
 
