@@ -67,8 +67,11 @@ public:
 ```
 
 **Solution:2** **[**union by rank**]**
-Time Complexity: O(k log(mn)), where k == positions.length
+
+Time Complexity: O(k * α(mn)), where k == positions.length
 Space Complexity: O(m*n)
+
+Note: α refers to the Inverse Ackermann function. In practice, we assume it's a constant. In other words,  O(α(N)) is regarded as O(1) on average.
 
 ```
 class Solution {
