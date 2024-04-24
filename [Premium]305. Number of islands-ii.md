@@ -24,7 +24,7 @@ Initially, the 2d grid is filled with water.
 
 **Solution: 1**:
 
-Time Complexity: O(k * m * n), where k == positions.length
+Time Complexity: O(k log(mn)), where k == positions.length
 Space Complexity: O(m*n)
 
 ```
