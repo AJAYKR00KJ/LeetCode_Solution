@@ -22,7 +22,10 @@ Initially, the 2d grid is filled with water.
 - Operation #4: addLand(2, 1) turns the water at grid[2][1] into a land. We have 3 islands.
 
 
-**Solution**:
+**Solution: 1**:
+
+Time Complexity: O(k * m * n), where k == positions.length
+Space Complexity: O(m*n)
 
 ```
 class Solution {
@@ -53,6 +56,59 @@ public:
                     if(pAdjIndex != pNewIndex) {
                         islands--;
                         par[pAdjIndex] = pNewIndex;
+                    }
+                }
+            }
+            ans.push_back(islands);
+        }
+        return ans;
+    }
+};
+```
+
+Solution:2 [union by rank]
+Time Complexity: O(k log(mn)), where k == positions.length
+Space Complexity: O(m*n)
+
+```
+class Solution {
+public:
+    int getParent(vector<int> &par, int val) {
+        if(par[val]==val) return par[val];
+        return par[val] = getParent(par, par[val]);
+    }
+    void _union(int a, int b, vector<int> &par, vector<int> &rank) {
+        if(rank[a]<rank[b]) {
+            par[a] = b;
+        } else if(rank[a]>rank[b]) {
+            par[b] = a;
+        } else {
+            par[a] = b;
+            rank[a]++;
+        }
+    }
+    vector<int> numIslands2(int m, int n, vector<vector<int>>& positions) {
+        vector<int> par(m*n, -1), rank(m*n, 1);
+        vector<int> ans;
+        vector<vector<int>> directions = {{-1,0},{0,1}, {1,0}, {0,-1}};
+        int islands = 0;
+        for(vector<int> position: positions) {
+            int x = position[0], y = position[1], index = x*n + y;
+            if(par[index]!=-1) {
+                ans.push_back(islands);
+                continue;
+            }
+            islands++;
+            par[index] = index;
+            for(vector<int> direction: directions) {
+                int nx = x + direction[0], ny = y + direction[1];
+                int adjIndex = nx * n + ny;
+                if(nx>=0 && nx<m && ny>=0 && ny<n && par[adjIndex]!=-1) {
+                    int pAdjIndex = getParent(par, adjIndex);
+                    int pNewIndex = getParent(par, index);
+                    if(pAdjIndex != pNewIndex) {
+                        islands--;
+                        _union(pAdjIndex, pNewIndex, par, rank);
                     }
                 }
             }
