@@ -857,55 +857,483 @@ Output: `"123_456_123"`
 ```cpp
 #include <iostream>
 #include <unordered_map>
+#include <stack>
 #include <string>
-
 using namespace std;
 
-// Helper function to expand templates recursively
-string expandTemplate(unordered_map<string, string>& mp, string input) {
-    bool replaced = true;
-    while (replaced) {
-        replaced = false;
-        string output;
-        for (size_t i = 0; i < input.length(); ) {
-            if (input[i] == '%' && i+1 < input.length()) {
-                size_t j = input.find('%', i+1);
-                if (j != string::npos) {
-                    string key = input.substr(i+1, j-i-1);
-                    if (mp.count(key)) {
-                        output += mp[key];
-                        replaced = true; // found a replacement
-                    } else {
-                        // No mapping found, keep as is
-                        output += "%" + key + "%";
-                    }
-                    i = j+1;
-                } else {
-                    // only one %, copy as is
-                    output += input[i++];
+string replaceTemplate(const string &input, const unordered_map<string, string> &templateMap) {
+    string result = "";
+    stack<char> st;
+    int n = input.length();
+    int i = 0;
+    
+    while (i < n) {
+        if (input[i] == '%') {
+            // Handle the case where we found a '%' start
+            int start = i + 1;
+            while (i < n && input[i] != '%') {
+                i++;
+            }
+            int end = i; // mark the end of the placeholder
+            string placeholder = input.substr(start, end - start);
+            
+            // Check if placeholder exists in templateMap
+            if (templateMap.find(placeholder) != templateMap.end()) {
+                string replacement = templateMap.at(placeholder);
+                for (char c : replacement) {
+                    st.push(c);  // Push the replacement string characters to the stack
                 }
             } else {
-                output += input[i++];
+                // Placeholder not found, just put it as is
+                st.push('%');
+                for (char c : placeholder) {
+                    st.push(c);
+                }
+                st.push('%');
             }
+        } else {
+            // Handle regular characters (numbers, underscores)
+            st.push(input[i]);
         }
-        input = output;
+        i++;
     }
-    return input;
+
+    // Reconstruct the result from the stack
+    while (!st.empty()) {
+        result = st.top() + result;
+        st.pop();
+    }
+    return result;
 }
 
 int main() {
-    unordered_map<string, string> mp;
-    mp["X"] = "123";
-    mp["Y"] = "456_%X%";
+    unordered_map<string, string> templateMap = {
+        {"X", "123"},
+        {"Y", "456_%X%"}
+    };
 
     string input = "%X%_%Y%";
 
-    string result = expandTemplate(mp, input);
-    cout << result << endl; // Output: 123_456_123
+    string output = replaceTemplate(input, templateMap);
+
+    cout << "Output: " << output << endl;
 
     return 0;
 }
 ```
 
+# Restaurant Waitlist System Design
 
+## Problem Statement
+
+Design a system to manage a restaurant waitlist with the following requirements:
+
+1. **Add Customer Groups**: New customer groups can be added to the waitlist.
+2. **Remove Customer Groups**: A customer group can leave the waitlist at any time.
+3. **Assign Table**: Given a table size, find the group that best fits the table. A group is eligible for a table if its size is ≤ table size, and among eligible groups, the one that has been waiting the longest should be assigned the table.
+
+## Approach
+
+We use a combination of:
+- A **map** (`map<int, priority_queue<pair<int, int>, vector<pair<int, int>>, greater<>>>`) to store groups, where keys represent group sizes and the values are min-heaps ordered by their arrival times.
+- An **unordered_map** (`unordered_map<int, bool>`) to track whether a group is still waiting or has left.
+- A **timer** variable to track the order of arrival.
+
+### Operations:
+1. **Add Group**:
+   - For each new group, the group size is used to determine the key in the map. The arrival time (a timer) is used to ensure we prioritize earlier arrivals when two groups have the same size.
+   - The group’s waiting status is set to true when it is added.
+  
+2. **Remove Group**:
+   - When a group leaves, we mark its status as not waiting but don't remove it from the heap immediately. This allows us to "lazy delete" invalid groups later.
+  
+3. **Assign Table**:
+   - Given a table size, we find the largest group that can fit (whose size ≤ table size). The group with the smallest arrival time (earliest) is chosen from among the largest groups.
+
+### Optimizations:
+- **Map**: We use a `map<int, minHeap<pair<int, int>>>` instead of `unordered_map` because `map` keeps the keys (group sizes) sorted, which allows for efficient searching for the largest group size ≤ table size.
+- **Lazy Deletion**: When a group leaves, it is not immediately removed from the heap. Instead, we remove it lazily during the table assignment process when we encounter an invalid (non-waiting) group.
+
+### Updated Design
+
+```cpp
+#include <iostream>
+#include <unordered_map>
+#include <map>
+#include <queue>
+#include <vector>
+using namespace std;
+
+class WaitList {
+private:
+    // groupSize -> minHeap of (arrivalTime, groupId)
+    map<int, priority_queue<pair<int, int>, vector<pair<int, int>>, greater<>>> groupSizeMap;
+    unordered_map<int, bool> isWaiting; // groupId -> true/false
+    int timer = 0; // to assign arrival order
+
+public:
+    // Add new customer group
+    void addGroup(int groupId, int groupSize) {
+        groupSizeMap[groupSize].push({timer++, groupId});
+        isWaiting[groupId] = true;
+    }
+
+    // A group leaves
+    void removeGroup(int groupId) {
+        isWaiting[groupId] = false;
+    }
+
+    // Find eligible group for table
+    int findGroup(int tableSize) {
+        // Find the largest groupSize <= tableSize
+        auto it = groupSizeMap.upper_bound(tableSize); // strictly greater
+        if (it == groupSizeMap.begin()) {
+            return -1; // no group fits
+        }
+        --it; // step back to <= tableSize
+
+        while (true) {
+            auto& heap = it->second;
+            while (!heap.empty()) {
+                auto [arriveTime, groupId] = heap.top();
+                if (isWaiting[groupId]) {
+                    isWaiting[groupId] = false; // group assigned
+                    heap.pop();
+                    return groupId;
+                }
+                heap.pop(); // lazy removal of invalid groups
+            }
+            if (it == groupSizeMap.begin()) break;
+            --it; // check next smaller groupSize
+        }
+        return -1; // no valid group found
+    }
+};
+```
+
+### Optimized
+```cpp
+#include <bits/stdc++.h>
+using namespace std;
+
+class WaitList {
+private:
+    map<int, list<pair<int, int>>> groupSizeToGroups; // groupSize -> list of {arrivalTime, groupId}
+    unordered_map<int, list<pair<int, int>>::iterator> groupIdToNode; // groupId -> node in list
+    int arrivalTime = 0; // incrementing timer to maintain arrival order
+
+public:
+    // Add new group
+    void addGroup(int groupId, int groupSize) {
+        groupSizeToGroups[groupSize].push_back({arrivalTime++, groupId});
+        auto it = groupSizeToGroups[groupSize].end();
+        --it; // iterator to the newly added group
+        groupIdToNode[groupId] = it;
+    }
+
+    // Group leaves
+    void removeGroup(int groupId) {
+        if (groupIdToNode.count(groupId)) {
+            auto it = groupIdToNode[groupId];
+            int size = it->first; // but we don't know size directly
+            for (auto& [sz, lst] : groupSizeToGroups) {
+                if (lst.empty()) continue;
+                if (groupId == it->second) {
+                    lst.erase(it);
+                    break;
+                }
+            }
+            groupIdToNode.erase(groupId);
+        }
+    }
+
+    // Assign table
+    int assignTable(int tableSize) {
+        auto it = groupSizeToGroups.upper_bound(tableSize);
+        if (it == groupSizeToGroups.begin()) return -1; // no group fits
+        --it; // largest groupSize <= tableSize
+        if (it->second.empty()) return -1; // no group waiting
+
+        // Pick earliest arrival group
+        int groupId = it->second.front().second;
+        groupIdToNode.erase(groupId);
+        it->second.pop_front();
+        return groupId;
+    }
+};
+```
+
+### More Optimization
+```cpp
+#include <bits/stdc++.h>
+using namespace std;
+
+class WaitList {
+private:
+    map<int, list<int>> groupSizeToGroups; // groupSize -> list of groupId (maintains arrival order)
+    unordered_map<int, pair<int, list<int>::iterator>> groupIdToNode; // groupId -> {groupSize, node in list}
+
+public:
+    // Add a new group
+    void addGroup(int groupId, int groupSize) {
+        groupSizeToGroups[groupSize].push_back(groupId);
+        auto it = prev(groupSizeToGroups[groupSize].end()); // iterator to the newly added group
+        groupIdToNode[groupId] = {groupSize, it};
+    }
+
+    // Remove a group
+    void removeGroup(int groupId) {
+        if (groupIdToNode.count(groupId)) {
+            auto [size, it] = groupIdToNode[groupId];
+            groupSizeToGroups[size].erase(it);
+            if (groupSizeToGroups[size].empty()) {
+                groupSizeToGroups.erase(size); // optional: clean up empty sizes
+            }
+            groupIdToNode.erase(groupId);
+        }
+    }
+
+    // Assign a table
+    int assignTable(int tableSize) {
+        auto it = groupSizeToGroups.upper_bound(tableSize);
+        if (it == groupSizeToGroups.begin()) return -1; // no group fits
+        --it; // largest groupSize <= tableSize
+        if (it->second.empty()) return -1;
+
+        int groupId = it->second.front(); // get the earliest arriving group
+        it->second.pop_front(); // remove from list
+        groupIdToNode.erase(groupId);
+        if (it->second.empty()) {
+            groupSizeToGroups.erase(it); // optional: clean up
+        }
+        return groupId;
+    }
+};
+```
+### ✨ Time Complexities:
+
+| Operation      | Time Complexity   |
+|----------------|-------------------|
+| `addGroup`     | O(log M)          |
+| `removeGroup`  | O(1)              |
+| `assignTable`  | O(log M)          |
+
+
+### ✨ Problem Statement:
+You are given a sorted array of strings and a prefix. The task is to return the number of strings in the array that start with the given prefix.
+
+---
+
+### 🛠️ Approaches:
+
+#### 1. Brute Force Approach:
+**Description:**  
+Iterate over each element in the array and check if the element starts with the given prefix.
+
+**Time Complexity:** O(n * m), where:
+- `n` is the number of strings in the array.
+- `m` is the average length of the strings.
+
+**Steps:**
+1. Iterate through each string in the array.
+2. For each string, check if it starts with the given prefix using string functions like `startswith` or equivalent.
+3. Maintain a count and return the result after iterating through all strings.
+
+**Example Code:**
+
+```cpp
+int countPrefix(const vector<string>& arr, const string& prefix) {
+    int count = 0;
+    for (const string& s : arr) {
+        if (s.substr(0, prefix.length()) == prefix) {
+            count++;
+        }
+    }
+    return count;
+}
+```
+### Trie Approach
+```cpp
+struct TrieNode {
+    unordered_map<char, TrieNode*> children;
+    int count = 0; // frequency of words passing through this node
+};
+
+void insert(TrieNode* root, const string& word) {
+    TrieNode* node = root;
+    for (char c : word) {
+        if (node->children.find(c) == node->children.end()) {
+            node->children[c] = new TrieNode();
+        }
+        node = node->children[c];
+        node->count++;
+    }
+}
+
+int countPrefix(TrieNode* root, const string& prefix) {
+    TrieNode* node = root;
+    for (char c : prefix) {
+        if (node->children.find(c) == node->children.end()) {
+            return 0; // no such prefix exists
+        }
+        node = node->children[c];
+    }
+    return node->count;
+}
+```
+### Binary Search Approach
+```cpp
+int countPrefix(const vector<string>& arr, const string& prefix) {
+    int left = lower_bound(arr.begin(), arr.end(), prefix) - arr.begin();
+    string prefix_end = prefix;
+    prefix_end[prefix_end.size() - 1]++;  // Increment last character to find the end
+    int right = lower_bound(arr.begin(), arr.end(), prefix_end) - arr.begin();
+    return right - left;
+}
+```
+
+# Sturdy Wall Builder
+
+This program calculates the number of ways to build a sturdy wall of a specified height and width, using bricks of given sizes. The key condition is that adjacent rows should not align at the same positions where the bricks end, except at the ends of the wall.
+
+### Problem Description
+
+You are given:
+- **height**: The height of the wall (number of rows).
+- **width**: The width of the wall (length of each row).
+- **bricks**: An array of brick sizes, each brick has height 1 and width as described by the array. Each brick can be used an infinite number of times.
+
+The program calculates how many ways you can arrange the bricks to form a sturdy wall, ensuring that adjacent rows do not align their brick ends at the same positions except at the wall edges.
+
+### Key Constraints
+- Rows in the wall must be exactly `width` units long.
+- Adjacent rows must not align at the same positions except at the start and end of the wall.
+
+### Approach
+
+The solution uses a **recursive depth-first search (DFS)** strategy combined with **memoization** to efficiently compute the number of valid ways to build the wall. Each row's brick positions (cut points) are stored and used to ensure the adjacency condition is met.
+
+1. **Row Configuration Generation**: For a given row width, generate all possible ways to fill the row using the given bricks and store the cut positions.
+2. **DFS with Memoization**: Recursively build the wall row by row, making sure that no adjacent rows share the same cut positions (except at the wall edges).
+3. **Memoization**: To avoid recalculating the same state (row and cut positions), results are stored using memoization.
+
+### Time Complexity
+
+- **Generating Row Configurations**: This step is exponential with respect to the width of the wall (since we try every combination of brick sizes).
+- **DFS**: The recursive depth is proportional to the height of the wall, and for each row, we explore all possible valid row configurations, ensuring that no cuts from adjacent rows align.
+
+### Example
+
+Given the inputs:
+- **Height**: 2
+- **Width**: 3
+- **Bricks**: `[1, 2]`
+
+The program will output the number of ways to build the wall. For this example, the result is `4` because there are 4 valid configurations.
+
+### Code Explanation
+
+#### 1. `buildRows` Function
+Generates all possible row configurations using the given brick sizes and stores the cut positions for each configuration.
+
+#### 2. `dfs` Function
+Recursively builds the wall row by row, ensuring no cuts from adjacent rows align (except at the wall boundaries). Uses memoization to store previously computed results to optimize the solution.
+
+#### 3. `isCompatible` Function
+Checks whether two rows’ cut positions are compatible, meaning they don't align at the same positions except at the wall edges.
+
+#### 4. `toString` Function
+Converts the cut positions into a string format for easy use in memoization.
+
+### Running the Program
+
+1. Clone the repository to your local machine.
+2. Compile the C++ code using your preferred C++ compiler.
+
+```cpp
+#include <bits/stdc++.h>
+using namespace std;
+
+const int MOD = 1e9 + 7;
+
+vector<vector<int>> possibleRows;   // Stores all possible row configurations (cut positions)
+unordered_map<string, int> memo;    // Memoization to avoid recomputation
+vector<int> bricks;                 // The list of available brick sizes
+int wallHeight, wallWidth;           // Height and Width of the wall
+
+// Function to recursively build all possible row configurations
+void buildRows(int pos, vector<int>& cuts) {
+    if (pos == wallWidth) {  // If the row is filled exactly to the required width
+        possibleRows.push_back(cuts);  // Store the cut positions of this row
+        return;
+    }
+    for (int brick : bricks) {  // Try placing each brick at the current position
+        if (pos + brick <= wallWidth) {  // Ensure we do not exceed the width of the wall
+            if (pos + brick != wallWidth) cuts.push_back(pos + brick);  // Add cut if not at the end of the row
+            buildRows(pos + brick, cuts);  // Recurse to the next position
+            if (pos + brick != wallWidth) cuts.pop_back();  // Backtrack by removing the last cut
+        }
+    }
+}
+
+// Function to check if two rows' cuts are compatible
+bool isCompatible(const vector<int>& prev, const vector<int>& curr) {
+    int i = 0, j = 0;
+    while (i < prev.size() && j < curr.size()) {
+        if (prev[i] == curr[j]) return false;  // If the cuts align, they are not compatible
+        if (prev[i] < curr[j]) i++;  // Move to the next cut in the previous row
+        else j++;  // Move to the next cut in the current row
+    }
+    return true;  // If no cuts overlap, the rows are compatible
+}
+
+// Convert the cut vector to a string for memoization
+string toString(const vector<int>& cuts) {
+    string s;
+    for (int x : cuts) {
+        s += to_string(x) + ",";
+    }
+    return s;
+}
+
+// Recursive DFS function to build the wall row by row
+int dfs(int row, vector<int>& prevCuts) {
+    if (row == wallHeight) return 1;  // If we've successfully built all rows, return 1
+    
+    string key = to_string(row) + "#" + toString(prevCuts);  // Key for memoization
+    if (memo.count(key)) return memo[key];  // If this state has been computed before, return it
+
+    int ways = 0;
+    for (auto& cuts : possibleRows) {  // Try each possible row configuration
+        if (isCompatible(prevCuts, cuts)) {  // Check if the current row is compatible with the previous one
+            ways = (ways + dfs(row + 1, cuts)) % MOD;  // Recurse to the next row
+        }
+    }
+    
+    return memo[key] = ways;  // Memoize the result for this state
+}
+
+// Main function to build the wall and return the number of ways
+int buildWall(int height, int width, vector<int>& brickSizes) {
+    wallHeight = height;
+    wallWidth = width;
+    bricks = brickSizes;
+    possibleRows.clear();  // Clear any previous row configurations
+    memo.clear();  // Clear the memoization cache
+    
+    vector<int> cuts;
+    buildRows(0, cuts);  // Generate all possible row configurations
+
+    vector<int> emptyCuts;  // Starting with an empty previous row
+    return dfs(0, emptyCuts);  // Start building the wall from the first row
+}
+
+// Main function to test the program
+int main() {
+    int height = 2, width = 3;
+    vector<int> brickSizes = {1, 2};
+    cout << buildWall(height, width, brickSizes) << endl;  // Output the number of ways
+    return 0;
+}
+```
 
