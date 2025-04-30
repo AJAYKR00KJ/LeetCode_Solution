@@ -1337,3 +1337,7 @@ int main() {
 }
 ```
 
+
+## More problems to look
+- https://leetcode.com/problems/check-if-grid-can-be-cut-into-sections/description/
+
